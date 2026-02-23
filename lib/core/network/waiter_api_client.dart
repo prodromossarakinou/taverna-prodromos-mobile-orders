@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:untitled1/features/orders/domain/models.dart';
 
 class ApiException implements Exception {
@@ -13,7 +14,9 @@ class ApiException implements Exception {
 }
 
 class WaiterApiClient {
-  WaiterApiClient({required this.baseUrl});
+  WaiterApiClient({required this.baseUrl}) {
+    debugPrint('[API] baseUrl=${_normalizedBase()}');
+  }
 
   final String baseUrl;
 
@@ -58,7 +61,7 @@ class WaiterApiClient {
               'id': line.product.id,
               'name': line.product.name,
               'quantity': line.quantity,
-              'category': line.product.category.apiCategory,
+              'category': line.product.category,
               'itemStatus': 'pending',
               'extraNotes': line.note,
             },

@@ -1,4 +1,4 @@
-package com.example.untitled1
+package com.prodromossarakinou.scenarium.waiter
 
 import io.flutter.embedding.android.FlutterActivity
 

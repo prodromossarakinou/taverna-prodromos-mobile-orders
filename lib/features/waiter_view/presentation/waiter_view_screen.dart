@@ -33,7 +33,7 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
   final ScrollController _orderListController = ScrollController();
   final ScrollController _menuGridScrollController = ScrollController();
 
-  MenuCategory _selectedCategory = MenuCategory.cold;
+  String? _selectedCategory;
   List<MenuProduct> _menuProducts = const [];
   final List<OrderLine> _orderLines = [];
   final Set<String> _removingIds = <String>{};
@@ -220,6 +220,7 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
   Widget _buildCategoryTabs() {
     final palette = AppPalette.of(context);
     final isExtraMode = widget.mode == WaiterMode.addExtra;
+    final categories = _menuCategories;
 
     Widget buildRepeatChip() {
       return Padding(
@@ -284,10 +285,11 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
                 left: isExtraMode ? 0 : 8,
                 right: 8,
               ),
-              itemCount: MenuCategory.values.length,
+              itemCount: categories.length,
               itemBuilder: (context, index) {
-                final category = MenuCategory.values[index];
+                final category = categories[index];
                 final isActive = category == _selectedCategory;
+                final categoryColor = _categoryColor(category);
                 return Semantics(
                   button: true,
                   selected: isActive,
@@ -306,19 +308,19 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
                       ),
                       decoration: BoxDecoration(
                         color: isActive
-                            ? category.color.withValues(alpha: 0.18)
+                            ? categoryColor.withValues(alpha: 0.18)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
                         border: isActive
                             ? Border.all(
-                                color: category.color.withValues(alpha: 0.80),
+                                color: categoryColor.withValues(alpha: 0.80),
                                 width: 1.4,
                               )
                             : Border.all(color: Colors.transparent),
                       ),
                       child: Center(
                         child: Text(
-                          category.label,
+                          category,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
@@ -344,7 +346,10 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
     final palette = AppPalette.of(context);
     final isExtraMode = widget.mode == WaiterMode.addExtra;
     final categoryItems = _menuProducts
-        .where((item) => item.category == _selectedCategory)
+        .where(
+          (item) =>
+              _selectedCategory == null || item.category == _selectedCategory,
+        )
         .where(_matchesMenuSearch)
         .where(
           (item) =>
@@ -497,7 +502,7 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
                             final item = categoryItems[index];
                             return _MenuItemCard(
                               item: item,
-                              onTap: () => _addProduct(item),
+                              onTap: item.active ? () => _addProduct(item) : null,
                             );
                           },
                         ),
@@ -616,7 +621,7 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
       return true;
     }
     final name = product.name.toLowerCase();
-    final category = product.category.label.toLowerCase();
+    final category = product.category.toLowerCase();
     return name.contains(query) || category.contains(query);
   }
 
@@ -628,6 +633,9 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
   }
 
   void _addProduct(MenuProduct product) {
+    if (!product.active) {
+      return;
+    }
     HapticFeedback.mediumImpact();
 
     final index = _orderLines.indexWhere(
@@ -882,8 +890,15 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
       if (!mounted) {
         return;
       }
+      final sanitizedMenu = menu.where((item) => item.id.isNotEmpty).toList();
+      final categories = _extractMenuCategories(sanitizedMenu);
+      final selectedCategory = _selectedCategory;
       setState(() {
-        _menuProducts = menu.where((item) => item.id.isNotEmpty).toList();
+        _menuProducts = sanitizedMenu;
+        if (selectedCategory == null ||
+            !categories.contains(selectedCategory)) {
+          _selectedCategory = categories.isEmpty ? null : categories.first;
+        }
         _isLoadingMenu = false;
         _isRefreshingMenu = false;
         if (showErrorState) {
@@ -993,6 +1008,51 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
       });
     }
   }
+
+  List<String> get _menuCategories => _extractMenuCategories(_menuProducts);
+
+  List<String> _extractMenuCategories(List<MenuProduct> products) {
+    final seen = <String>{};
+    final categories = <String>[];
+    for (final product in products) {
+      final category = product.category.trim();
+      if (category.isEmpty) {
+        continue;
+      }
+      if (seen.add(category)) {
+        categories.add(category);
+      }
+    }
+    return categories;
+  }
+
+  Color _categoryColor(String category) {
+    final normalized = category.toLowerCase();
+    if (normalized.contains('κρύ')) {
+      return AppColors.cold;
+    }
+    if (normalized.contains('ζεστ')) {
+      return AppColors.hot;
+    }
+    if (normalized.contains('ψηστ')) {
+      return AppColors.grill;
+    }
+    if (normalized.contains('μαγειρ')) {
+      return AppColors.cooked;
+    }
+    if (normalized.contains('ποτ') || normalized.contains('αναψ')) {
+      return AppColors.drinks;
+    }
+
+    const fallback = <Color>[
+      AppColors.cold,
+      AppColors.hot,
+      AppColors.grill,
+      AppColors.cooked,
+      AppColors.drinks,
+    ];
+    return fallback[category.hashCode.abs() % fallback.length];
+  }
 }
 
 class _HeaderInput extends StatelessWidget {
@@ -1061,7 +1121,7 @@ class _MenuItemCard extends StatefulWidget {
   const _MenuItemCard({required this.item, required this.onTap});
 
   final MenuProduct item;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   State<_MenuItemCard> createState() => _MenuItemCardState();
@@ -1073,25 +1133,34 @@ class _MenuItemCardState extends State<_MenuItemCard> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
+    final isEnabled = widget.item.active;
+    final textColor = isEnabled ? palette.onSurface : palette.onSurfaceMuted;
+    final borderColor = _pressed && isEnabled ? AppColors.drinks : palette.outline;
 
     return Semantics(
       label: '${widget.item.name}, προσθήκη στην παραγγελία',
       button: true,
+      enabled: isEnabled,
       child: AnimatedScale(
         duration: const Duration(milliseconds: 150),
         curve: Curves.easeInOut,
-        scale: _pressed ? 0.98 : 1,
+        scale: _pressed && isEnabled ? 0.98 : 1,
         child: Material(
           color: palette.surface,
           borderRadius: BorderRadius.circular(8),
           child: InkWell(
             onTap: widget.onTap,
             onHighlightChanged: (value) {
+              if (!isEnabled) {
+                return;
+              }
               setState(() {
                 _pressed = value;
               });
             },
-            splashColor: AppColors.primary.withValues(alpha: 0.12),
+            splashColor: isEnabled
+                ? AppColors.primary.withValues(alpha: 0.12)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
@@ -1099,22 +1168,53 @@ class _MenuItemCardState extends State<_MenuItemCard> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: _pressed ? AppColors.drinks : palette.outline,
+                  color: borderColor,
                   width: 2,
                 ),
               ),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  widget.item.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: palette.onSurface,
-                    height: 1.4,
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.item.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: textColor,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    if (!isEnabled) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: palette.onSurfaceMuted.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: palette.onSurfaceMuted.withValues(alpha: 0.65),
+                          ),
+                        ),
+                        child: Text(
+                          'OFF',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: palette.onSurfaceMuted,
+                            height: 1.2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),

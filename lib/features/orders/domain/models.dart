@@ -1,53 +1,46 @@
 import 'package:flutter/material.dart';
 
-import 'package:untitled1/core/theme/app_theme.dart';
-
 enum WaiterMode { newOrder, addExtra }
-
-enum MenuCategory {
-  cold('Κρύα Κουζίνα/Σαλάτες', 'Κρύα', AppColors.cold),
-  hot('Ζεστές Σαλάτες', 'Ζεστές', AppColors.hot),
-  grill('Ψησταριά', 'Ψησταριά', AppColors.grill),
-  cooked('Μαγειρευτό', 'Μαγειρευτό', AppColors.cooked),
-  drinks('Αναψυκτικά/Ποτά', 'Ποτά', AppColors.drinks);
-
-  const MenuCategory(this.label, this.apiCategory, this.color);
-  final String label;
-  final String apiCategory;
-  final Color color;
-
-  static MenuCategory? fromApiCategory(String raw) {
-    for (final category in MenuCategory.values) {
-      if (category.apiCategory == raw) {
-        return category;
-      }
-    }
-    return null;
-  }
-}
 
 class MenuProduct {
   const MenuProduct({
     required this.id,
     required this.name,
     required this.category,
+    required this.active,
   });
 
   final String id;
   final String name;
-  final MenuCategory category;
+  final String category;
+  final bool active;
 
   static MenuProduct? fromApiJson(Map<String, dynamic> json) {
-    final category = MenuCategory.fromApiCategory(json['category']?.toString() ?? '');
-    if (category == null) {
+    final rawCategory = json['category']?.toString().trim() ?? '';
+    if (rawCategory.isEmpty) {
       return null;
     }
 
     return MenuProduct(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
-      category: category,
+      category: rawCategory,
+      active: _parseActive(json['active']),
     );
+  }
+
+  static bool _parseActive(dynamic raw) {
+    if (raw is bool) {
+      return raw;
+    }
+    if (raw is num) {
+      return raw != 0;
+    }
+    final text = raw?.toString().trim().toLowerCase() ?? '';
+    if (text == 'false' || text == '0' || text == 'no') {
+      return false;
+    }
+    return true;
   }
 }
 

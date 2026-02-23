@@ -6,9 +6,16 @@ plugins {
 }
 
 android {
-    namespace = "com.example.untitled1"
+    namespace = "com.prodromossarakinou.scenarium.waiter"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
+    packaging {
+        jniLibs {
+            // Prevent broken stripping of libflutter.so in debug builds on some toolchains/devices.
+            keepDebugSymbols += setOf("**/libflutter.so")
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -20,8 +27,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.untitled1"
+        applicationId = "com.prodromossarakinou.scenarium.waiter"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
