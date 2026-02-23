@@ -74,9 +74,38 @@ class _WaiterOrdersScreenState extends State<WaiterOrdersScreen> {
             ),
             child: Row(
               children: [
+                IconButton.filledTonal(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  tooltip: 'Πίσω',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.18),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(40, 40),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.arrow_back),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: () =>
+                      Navigator.of(context).popUntil((route) => route.isFirst),
+                  tooltip: 'Αρχική',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.18),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(40, 40),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.home),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     headerTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: _isHeaderCollapsed ? 18 : 22,

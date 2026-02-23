@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'package:untitled1/core/config/api_config.dart';
 import 'package:untitled1/core/network/waiter_api_client.dart';
+import 'package:untitled1/core/storage/local_settings_store.dart';
 import 'package:untitled1/core/theme/app_theme.dart';
 import 'package:untitled1/features/orders/domain/models.dart';
 
@@ -15,11 +16,13 @@ class WaiterViewScreen extends StatefulWidget {
     required this.mode,
     required this.onToggleTheme,
     this.initialTable,
+    this.initialParentOrderId,
   });
 
   final WaiterMode mode;
   final VoidCallback onToggleTheme;
   final String? initialTable;
+  final String? initialParentOrderId;
 
   @override
   State<WaiterViewScreen> createState() => _WaiterViewScreenState();
@@ -27,6 +30,7 @@ class WaiterViewScreen extends StatefulWidget {
 
 class _WaiterViewScreenState extends State<WaiterViewScreen> {
   final WaiterApiClient _api = WaiterApiClient(baseUrl: ApiConfig.baseUrl);
+  final LocalSettingsStore _settingsStore = LocalSettingsStore();
   final TextEditingController _tableController = TextEditingController();
   final TextEditingController _waiterController = TextEditingController();
   final TextEditingController _menuSearchController = TextEditingController();
@@ -46,6 +50,7 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
   bool _repeatOrderFilterEnabled = false;
   Set<String> _repeatOrderProductIds = <String>{};
   Set<String> _repeatOrderProductNames = <String>{};
+  String? _defaultWaiterName;
 
   @override
   void initState() {
@@ -53,6 +58,8 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
     if (widget.initialTable != null) {
       _tableController.text = widget.initialTable!;
     }
+    _parentOrderId = widget.initialParentOrderId;
+    _loadDefaultWaiterName();
     _repeatOrderFilterEnabled = widget.mode == WaiterMode.addExtra;
     _menuGridScrollController.addListener(_onMenuScroll);
     _loadInitialData();
@@ -148,9 +155,37 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
         children: [
           Row(
             children: [
+              IconButton.filledTonal(
+                onPressed: () => Navigator.of(context).maybePop(),
+                tooltip: 'Πίσω',
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(40, 40),
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.arrow_back),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filledTonal(
+                onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+                tooltip: 'Αρχική',
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(40, 40),
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.home),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   _isHeaderCollapsed ? compactTitle : expandedTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: _isHeaderCollapsed ? 18 : 22,
                     fontWeight: _isHeaderCollapsed
@@ -161,6 +196,19 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
                   ),
                 ),
               ),
+              IconButton.filledTonal(
+                onPressed: _openDefaultWaiterSettingsDialog,
+                tooltip: 'Ρύθμιση προεπιλεγμένου σερβιτόρου',
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(40, 40),
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.settings),
+              ),
+              const SizedBox(width: 8),
               IconButton.filledTonal(
                 onPressed: widget.onToggleTheme,
                 tooltip: isDark
@@ -768,7 +816,9 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
     final tableNumber = _tableController.text.trim();
     try {
       final parentId = widget.mode == WaiterMode.addExtra
-          ? await _resolveParentOrderId(tableNumber)
+          ? ((_parentOrderId ?? '').isNotEmpty
+                ? _parentOrderId
+                : await _resolveParentOrderId(tableNumber))
           : null;
 
       await _api.createOrder(
@@ -785,7 +835,7 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
 
     setState(() {
       _tableController.clear();
-      _waiterController.clear();
+      _waiterController.text = _defaultWaiterName ?? '';
       _orderLines.clear();
       _removingIds.clear();
       _parentOrderId = null;
@@ -797,6 +847,9 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
       palette.success,
     );
     _announce('Παραγγελία στάλθηκε');
+    if (mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
   }
 
   Future<void> _clearOrder() async {
@@ -867,6 +920,68 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
     await _refreshMenu(showLoading: true, showErrorState: true);
   }
 
+  Future<void> _loadDefaultWaiterName() async {
+    final defaultName = await _settingsStore.getDefaultWaiterName();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _defaultWaiterName = defaultName;
+      if (_waiterController.text.trim().isEmpty && defaultName != null) {
+        _waiterController.text = defaultName;
+      }
+    });
+  }
+
+  Future<void> _openDefaultWaiterSettingsDialog() async {
+    var draft = _defaultWaiterName ?? '';
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Ρύθμιση Προεπιλεγμένου Σερβιτόρου'),
+          content: TextFormField(
+            initialValue: draft,
+            autofocus: true,
+            onChanged: (value) => draft = value,
+            decoration: const InputDecoration(
+              hintText: 'π.χ. Gregory',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Ακύρωση'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(''),
+              child: const Text('Καθαρισμός'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(draft.trim()),
+              child: const Text('Αποθήκευση'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == null) {
+      return;
+    }
+
+    final normalized = result.trim();
+    await _settingsStore.setDefaultWaiterName(normalized);
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _defaultWaiterName = normalized.isEmpty ? null : normalized;
+      _waiterController.text = _defaultWaiterName ?? '';
+    });
+  }
+
   Future<void> _refreshMenu({
     required bool showLoading,
     required bool showErrorState,
@@ -908,11 +1023,15 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
 
       if (widget.mode == WaiterMode.addExtra &&
           _tableController.text.trim().isNotEmpty) {
-        _parentOrderId = await _resolveParentOrderId(
-          _tableController.text.trim(),
-        );
-        if (mounted) {
-          setState(() {});
+        if ((_parentOrderId ?? '').isNotEmpty) {
+          await _hydrateRepeatProductsFromParent(_parentOrderId!);
+        } else {
+          _parentOrderId = await _resolveParentOrderId(
+            _tableController.text.trim(),
+          );
+          if (mounted) {
+            setState(() {});
+          }
         }
       }
     } on ApiException catch (e) {
@@ -994,6 +1113,40 @@ class _WaiterViewScreenState extends State<WaiterViewScreen> {
       return _parentOrderId;
     } on ApiException {
       return _parentOrderId;
+    }
+  }
+
+  Future<void> _hydrateRepeatProductsFromParent(String parentId) async {
+    try {
+      final orders = await _api.getOrders();
+      final relatedOrders = orders
+          .where(
+            (order) =>
+                order.id == parentId ||
+                (order.isExtra && order.parentId == parentId),
+          )
+          .toList();
+
+      final resolvedIds = relatedOrders
+          .expand((order) => order.items)
+          .map((item) => item.id)
+          .where((id) => id.trim().isNotEmpty)
+          .toSet();
+      final resolvedNames = relatedOrders
+          .expand((order) => order.items)
+          .map((item) => item.name.toLowerCase())
+          .where((name) => name.trim().isNotEmpty)
+          .toSet();
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _repeatOrderProductIds = resolvedIds;
+        _repeatOrderProductNames = resolvedNames;
+      });
+    } on ApiException {
+      // Ignore hydration failures; the screen still remains usable without repeat hints.
     }
   }
 

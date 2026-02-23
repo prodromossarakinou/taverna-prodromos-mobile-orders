@@ -48,16 +48,32 @@ class WaiterHomeScreen extends StatelessWidget {
                       }
 
                       var mode = WaiterMode.newOrder;
-                      final hasExisting = await _hasExistingOrder(tableNumber);
+                      String? selectedParentOrderId;
+                      final existingOrders = await _getOpenOrdersForTable(tableNumber);
                       if (!context.mounted) {
                         return;
                       }
-                      if (hasExisting) {
+                      if (existingOrders.isNotEmpty) {
                         final asExtra = await _showExtraDecisionDialog(context);
                         if (!context.mounted || asExtra == null) {
                           return;
                         }
                         mode = asExtra ? WaiterMode.addExtra : WaiterMode.newOrder;
+                        if (asExtra) {
+                          if (existingOrders.length == 1) {
+                            selectedParentOrderId = _rootOrderId(existingOrders.first);
+                          } else {
+                            final selected = await _showOrderPickerDialog(
+                              context,
+                              orders: existingOrders,
+                              title: 'Επιλογή Παραγγελίας για Extra',
+                            );
+                            if (!context.mounted || selected == null) {
+                              return;
+                            }
+                            selectedParentOrderId = selected.parentOrderId;
+                          }
+                        }
                       }
 
                       Navigator.of(context).push(
@@ -65,6 +81,7 @@ class WaiterHomeScreen extends StatelessWidget {
                           builder: (_) => WaiterViewScreen(
                             mode: mode,
                             initialTable: tableNumber,
+                            initialParentOrderId: selectedParentOrderId,
                             onToggleTheme: onToggleTheme,
                           ),
                         ),
@@ -79,16 +96,17 @@ class WaiterHomeScreen extends StatelessWidget {
                     subtitle: 'Προσθέστε σε υπάρχουσα παραγγελία',
                     onTap: () async {
                       HapticFeedback.lightImpact();
-                      final selectedTable =
+                      final selected =
                           await _showTableSelectorBottomSheet(context);
-                      if (!context.mounted || selectedTable == null) {
+                      if (!context.mounted || selected == null) {
                         return;
                       }
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => WaiterViewScreen(
                             mode: WaiterMode.addExtra,
-                            initialTable: selectedTable,
+                            initialTable: selected.tableNumber,
+                            initialParentOrderId: selected.parentOrderId,
                             onToggleTheme: onToggleTheme,
                           ),
                         ),
@@ -121,8 +139,10 @@ class WaiterHomeScreen extends StatelessWidget {
     );
   }
 
-  Future<String?> _showTableSelectorBottomSheet(BuildContext context) {
-    return showModalBottomSheet<String>(
+  Future<_ExistingOrderSelection?> _showTableSelectorBottomSheet(
+    BuildContext context,
+  ) {
+    return showModalBottomSheet<_ExistingOrderSelection>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
@@ -139,7 +159,7 @@ class WaiterHomeScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Επιλογή Τραπεζιού',
+                      'Επιλογή Τραπεζιού (Έξτρα)',
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 12),
@@ -160,34 +180,58 @@ class WaiterHomeScreen extends StatelessWidget {
                           );
                         }
 
-                        final tables = (snapshot.data ?? const <ApiOrderSummary>[])
-                            .where((order) => order.status != 'closed')
-                            .map((order) => order.tableNumber)
-                            .where((table) => table.trim().isNotEmpty)
-                            .toSet()
+                        final orders = (snapshot.data ?? const <ApiOrderSummary>[])
+                            .where(
+                              (order) =>
+                                  !order.isExtra &&
+                                  order.status != 'closed' &&
+                                  order.status != 'cancelled' &&
+                                  order.tableNumber.trim().isNotEmpty,
+                            )
                             .toList()
-                          ..sort((a, b) {
-                            final aInt = int.tryParse(a);
-                            final bInt = int.tryParse(b);
-                            if (aInt != null && bInt != null) {
-                              return aInt.compareTo(bInt);
-                            }
-                            return a.compareTo(b);
-                          });
+                          ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-                        if (tables.isEmpty) {
+                        if (orders.isEmpty) {
                           return const Text('Δεν υπάρχουν ανοιχτά τραπέζια.');
                         }
 
-                        return Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: tables.map((table) {
-                            return FilledButton.tonal(
-                              onPressed: () => Navigator.of(context).pop(table),
-                              child: Text('Τραπέζι $table'),
+                        return ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: orders.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            final order = orders[index];
+                            final waiter = order.waiterName.trim().isEmpty
+                                ? '-'
+                                : order.waiterName.trim();
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              tileColor: Theme.of(context).colorScheme.surfaceContainer,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                side: BorderSide(
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
+                              ),
+                              title: Text(
+                                'Τραπέζι ${order.tableNumber}',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              subtitle: Text(
+                                '${_formatTimestamp(order.timestamp)} • Σερβιτόρος: $waiter',
+                              ),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () => Navigator.of(context).pop(
+                                _ExistingOrderSelection(
+                                  tableNumber: order.tableNumber,
+                                  parentOrderId: _rootOrderId(order),
+                                ),
+                              ),
                             );
-                          }).toList(),
+                          },
                         );
                       },
                     ),
@@ -238,18 +282,88 @@ class WaiterHomeScreen extends StatelessWidget {
     });
   }
 
-  Future<bool> _hasExistingOrder(String tableNumber) async {
+  Future<List<ApiOrderSummary>> _getOpenOrdersForTable(String tableNumber) async {
     try {
       final orders = await _api.getOrders();
-      return orders.any(
-        (order) =>
-            order.tableNumber == tableNumber &&
-            order.status != 'closed' &&
-            order.status != 'cancelled',
-      );
+      return orders
+          .where(
+            (order) =>
+                !order.isExtra &&
+                order.tableNumber == tableNumber &&
+                order.status != 'closed' &&
+                order.status != 'cancelled',
+          )
+          .toList()
+        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     } on ApiException {
-      return false;
+      return const <ApiOrderSummary>[];
     }
+  }
+
+  String _rootOrderId(ApiOrderSummary order) {
+    if (order.isExtra && (order.parentId ?? '').isNotEmpty) {
+      return order.parentId!;
+    }
+    return order.id;
+  }
+
+  Future<_ExistingOrderSelection?> _showOrderPickerDialog(
+    BuildContext context, {
+    required List<ApiOrderSummary> orders,
+    required String title,
+  }) {
+    return showDialog<_ExistingOrderSelection>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: 420,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: orders.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 6),
+              itemBuilder: (context, index) {
+                final order = orders[index];
+                final waiter = order.waiterName.trim().isEmpty
+                    ? '-'
+                    : order.waiterName.trim();
+                return ListTile(
+                  dense: true,
+                  title: Text('Τραπέζι ${order.tableNumber}'),
+                  subtitle: Text(
+                    '${_formatTimestamp(order.timestamp)} • Σερβιτόρος: $waiter',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).pop(
+                    _ExistingOrderSelection(
+                      tableNumber: order.tableNumber,
+                      parentOrderId: _rootOrderId(order),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Ακύρωση'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _formatTimestamp(int raw) {
+    final millis = raw > 1000000000000 ? raw : raw * 1000;
+    final date = DateTime.fromMillisecondsSinceEpoch(millis);
+    final hh = date.hour.toString().padLeft(2, '0');
+    final mm = date.minute.toString().padLeft(2, '0');
+    final dd = date.day.toString().padLeft(2, '0');
+    final mo = date.month.toString().padLeft(2, '0');
+    return '$dd/$mo $hh:$mm';
   }
 
   Future<bool?> _showExtraDecisionDialog(BuildContext context) {
@@ -275,6 +389,16 @@ class WaiterHomeScreen extends StatelessWidget {
       },
     );
   }
+}
+
+class _ExistingOrderSelection {
+  const _ExistingOrderSelection({
+    required this.tableNumber,
+    required this.parentOrderId,
+  });
+
+  final String tableNumber;
+  final String parentOrderId;
 }
 
 class _HomeHeader extends StatelessWidget {
