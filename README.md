@@ -94,6 +94,19 @@ Used endpoints:
 flutter test
 ```
 
+## Pilot Feedback — Field Test
+The Flutter waiter application was tested during a real restaurant service under high activity conditions.
+Multiple staff members interacted with the app throughout the event.
+
+Observations:
+
+- The application was easy to understand without training.
+- Navigation between actions was clear.
+- Order entry was fast enough for real service conditions.
+- No device instability or crashes occurred on the PDA devices.
+- Overall feedback from users was very positive regarding usability.
+- The UI was considered intuitive and practical for restaurant workflows.
+
 ## References
 - [Flutter Architecture Guide](https://docs.flutter.dev/app-architecture)
 - [Material Design 3](https://m3.material.io/)
