@@ -146,37 +146,38 @@ class WaiterHomeScreen extends StatelessWidget {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
+      enableDrag: false,
       builder: (context) {
         final maxHeight = MediaQuery.of(context).size.height * 0.7;
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxHeight),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Επιλογή Τραπεζιού (Έξτρα)',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 12),
-                    FutureBuilder<List<ApiOrderSummary>>(
+            child: SizedBox(
+              height: maxHeight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Επιλογή Τραπεζιού (Έξτρα)',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: FutureBuilder<List<ApiOrderSummary>>(
                       future: _api.getOrders(),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
+                          return const Center(child: CircularProgressIndicator());
                         }
 
                         if (snapshot.hasError) {
-                          return Text(
-                            'Σφάλμα φόρτωσης τραπεζιών',
-                            style: TextStyle(color: Theme.of(context).colorScheme.error),
+                          return Center(
+                            child: Text(
+                              'Σφάλμα φόρτωσης τραπεζιών',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
                           );
                         }
 
@@ -186,17 +187,19 @@ class WaiterHomeScreen extends StatelessWidget {
                                   !order.isExtra &&
                                   order.status != 'closed' &&
                                   order.status != 'cancelled' &&
+                                  order.status != 'deleted' &&
                                   order.tableNumber.trim().isNotEmpty,
                             )
                             .toList()
                           ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
                         if (orders.isEmpty) {
-                          return const Text('Δεν υπάρχουν ανοιχτά τραπέζια.');
+                          return const Center(
+                            child: Text('Δεν υπάρχουν ανοιχτά τραπέζια.'),
+                          );
                         }
 
                         return ListView.separated(
-                          shrinkWrap: true,
                           itemCount: orders.length,
                           separatorBuilder: (_, _) => const SizedBox(height: 8),
                           itemBuilder: (context, index) {
@@ -235,8 +238,8 @@ class WaiterHomeScreen extends StatelessWidget {
                         );
                       },
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -291,7 +294,8 @@ class WaiterHomeScreen extends StatelessWidget {
                 !order.isExtra &&
                 order.tableNumber == tableNumber &&
                 order.status != 'closed' &&
-                order.status != 'cancelled',
+                order.status != 'cancelled' &&
+                order.status != 'deleted',
           )
           .toList()
         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));

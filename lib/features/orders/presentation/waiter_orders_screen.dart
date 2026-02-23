@@ -260,7 +260,11 @@ class _WaiterOrdersScreenState extends State<WaiterOrdersScreen> {
       }
       setState(() {
         _orders = orders
-            .where((order) => order.id.isNotEmpty)
+            .where(
+              (order) =>
+                  order.id.isNotEmpty &&
+                  order.status.toLowerCase() != 'deleted',
+            )
             .toList()
           ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
         _loading = false;
